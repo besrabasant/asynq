@@ -17,7 +17,6 @@ import (
 	"github.com/hibiken/asynq/internal/errors"
 	pb "github.com/hibiken/asynq/internal/proto"
 	"github.com/hibiken/asynq/internal/timeutil"
-	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -670,6 +669,17 @@ func (l *Lease) Deadline() time.Time {
 	return l.expireAt
 }
 
+// PubSubMessage represents a message received from a Pub/Sub subscription.
+type PubSubMessage struct {
+	Payload string
+}
+
+// PubSub defines a minimal publish/subscribe abstraction.
+type PubSub interface {
+	Channel() <-chan *PubSubMessage
+	Close() error
+}
+
 // IsValid returns true if the lease's expiration time is in the future or equals to the current time,
 // returns false otherwise.
 func (l *Lease) IsValid() bool {
@@ -718,7 +728,7 @@ type Broker interface {
 	ClearServerState(host string, pid int, serverID string) error
 
 	// Cancelation related methods
-	CancelationPubSub() (*redis.PubSub, error) // TODO: Need to decouple from redis to support other brokers
+	CancelationPubSub() (PubSub, error)
 	PublishCancelation(id string) error
 
 	WriteResult(qname, id string, data []byte) (n int, err error)
