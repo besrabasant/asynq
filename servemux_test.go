@@ -6,9 +6,13 @@ package asynq
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	asynqcontext "github.com/hibiken/asynq/internal/context"
+	h "github.com/hibiken/asynq/internal/testutil"
 )
 
 var called string    // identity of the handler that was called.
@@ -24,7 +28,7 @@ func makeFakeHandler(identity string) Handler {
 }
 
 // makeFakeMiddleware returns a middleware function that appends the given identity
-//to the global invoked slice.
+// to the global invoked slice.
 func makeFakeMiddleware(identity string) MiddlewareFunc {
 	return func(next Handler) Handler {
 		return HandlerFunc(func(ctx context.Context, t *Task) error {
@@ -126,6 +130,29 @@ func TestServeMuxNotFound(t *testing.T) {
 		if err == nil {
 			t.Errorf("ProcessTask did not return error for task %q, should return 'not found' error", task.Type())
 		}
+		if errors.Is(err, SkipRetry) {
+			t.Errorf("ProcessTask returned SkipRetry error when max retry is unknown: %v", err)
+		}
+	}
+}
+
+func TestNotFoundSkipRetry(t *testing.T) {
+	msg := h.NewTaskMessageBuilder().SetRetry(0).SetType("unknown").Build()
+	ctx, cancel := asynqcontext.New(context.Background(), msg, time.Now().Add(time.Minute))
+	defer cancel()
+	err := NotFound(ctx, NewTask(msg.Type, nil))
+	if !errors.Is(err, SkipRetry) {
+		t.Errorf("NotFound did not return SkipRetry when max retry is 0: %v", err)
+	}
+}
+
+func TestNotFoundWithRetry(t *testing.T) {
+	msg := h.NewTaskMessageBuilder().SetRetry(3).SetType("unknown").Build()
+	ctx, cancel := asynqcontext.New(context.Background(), msg, time.Now().Add(time.Minute))
+	defer cancel()
+	err := NotFound(ctx, NewTask(msg.Type, nil))
+	if errors.Is(err, SkipRetry) {
+		t.Errorf("NotFound returned SkipRetry when max retry > 0")
 	}
 }
 
